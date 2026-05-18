@@ -97,24 +97,31 @@
     // Устанавливаем в календаре сегодняшнюю дату по умолчанию (в формате yyyy-MM-dd)
     const d = new Date();
     const localToday = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    
     document.getElementById('archiveDate').value = localToday;
 
-    async function loadData(targetDate = "") {
+async function loadData(targetDate = "") {
         try {
-            const url = targetDate ? `${WEB_APP_URL}?date=${targetDate}` : WEB_APP_URL;
+            // Если дата не передана, берем текущую в формате YYYY-MM-DD (как в таблице)
+            if (!targetDate) {
+                const d = new Date();
+                targetDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+            }
+
+            const url = `${WEB_APP_URL}?date=${targetDate}`;
             const response = await fetch(url);
             const data = await response.json();
             
             globalTasks = data.tasks;
 
-            // Настраиваем заголовок
-            const formattedHeaderDate = new Date(data.date).toLocaleDateString("ru-RU");
-            document.getElementById('tableTitle').innerText = data.date === localToday ? `🏆 Итоги за сегодня (${formattedHeaderDate})` : `📅 Архив за ${formattedHeaderDate}`;
+            // Форматируем заголовок для людей (ДД.ММ.ГГГГ)
+            const displayDate = targetDate.split('-').reverse().join('.');
+            document.getElementById('tableTitle').innerText = targetDate === localToday ? `🏆 Итоги за сегодня (${displayDate})` : `📅 Архив за ${displayDate}`;
 
-            // Настраиваем выпадающий список пользователей в попапе
+            // Настраиваем выпадающий список пользователей
             document.getElementById('userSelect').innerHTML = data.users.map(u => `<option value="${u}">${u}</option>`).join('');
 
-            // Настраиваем поля ввода в попапе (Минуты и Секунды отдельно)
+            // Настраиваем поля ввода
             document.getElementById('modalTasksInputs').innerHTML = data.tasks.map((task, idx) => `
                 <div class="form-group">
                     <label><strong>${task}</strong></label>
@@ -126,32 +133,34 @@
                 </div>
             `).join('');
 
-            // СТРОИМ ТАБЛИЦУ ЛИДЕРОВ
-            // Шапка таблицы
+            // ШАПКА ТАБЛИЦЫ
             const thead = document.getElementById('tableHead');
             let headHtml = `<tr><th>Имя</th>`;
             data.tasks.forEach(t => { headHtml += `<th>${t}</th>`; });
             headHtml += `<th>Итого баллов</th></tr>`;
             thead.innerHTML = headHtml;
 
-            // Тело таблицы
+            // ТЕЛО ТАБЛИЦЫ
             const tbody = document.getElementById('tableBody');
-            if (data.table.length === 0 || data.table.every(row => row["Итого"] === 0)) {
-                tbody.innerHTML = `<tr><td colspan="${data.tasks.length + 2}" style="text-align:center; padding:30px; color:#64748b;">Данных за этот день пока нет</td></tr>`;
+            
+            // Проверка: есть ли данные в таблице
+            if (!data.table || data.table.length === 0 || data.table.every(row => row["Итого"] === 0)) {
+                tbody.innerHTML = `<tr><td colspan="${data.tasks.length + 2}" style="text-align:center; padding:30px; color:#64748b;">Данных за ${displayDate} пока нет</td></tr>`;
                 return;
             }
 
             tbody.innerHTML = data.table.map(row => {
                 let rowHtml = `<tr><td>${row["Имя"]}</td>`;
                 data.tasks.forEach(t => {
-                    rowHtml += `<td>${row[t]}</td>`;
+                    rowHtml += `<td>${row[t] || "0:00 (0)"}</td>`;
                 });
                 rowHtml += `<td class="td-total">${row["Итого"]}</td></tr>`;
                 return rowHtml;
             }).join('');
 
         } catch (e) {
-            document.getElementById('tableBody').innerHTML = `<tr><td style="color:red; text-align:center; padding:20px;">Ошибка получения данных с сервера.</td></tr>`;
+            console.error(e);
+            document.getElementById('tableBody').innerHTML = `<tr><td colspan="10" style="color:red; text-align:center; padding:20px;">Ошибка получения данных. Проверьте WEB_APP_URL.</td></tr>`;
         }
     }
 
