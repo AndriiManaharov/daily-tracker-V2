@@ -102,27 +102,29 @@
 
 async function loadData(targetDate = "") {
         try {
-            // Если дата не передана, берем текущую в формате YYYY-MM-DD (как в таблице)
+            const dateInput = document.getElementById('archiveDate');
+            
+            // Если дата не выбрана вручную, берем текущую дату в формате YYYY-MM-DD
             if (!targetDate) {
-                const d = new Date();
-                targetDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                const now = new Date();
+                targetDate = now.getFullYear() + '-' + 
+                             String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                             String(now.getDate()).padStart(2, '0');
+                dateInput.value = targetDate;
             }
 
-            const url = `${WEB_APP_URL}?date=${targetDate}`;
-            const response = await fetch(url);
+            const response = await fetch(`${WEB_APP_URL}?date=${targetDate}`);
             const data = await response.json();
             
             globalTasks = data.tasks;
 
-            // Форматируем заголовок для людей (ДД.ММ.ГГГГ)
-            const displayDate = targetDate.split('-').reverse().join('.');
-            document.getElementById('tableTitle').innerText = targetDate === localToday ? `🏆 Итоги за сегодня (${displayDate})` : `📅 Архив за ${displayDate}`;
+            // Заголовок (красивый формат ДД.ММ.ГГГГ)
+            const displayDate = data.date.split('-').reverse().join('.');
+            document.getElementById('tableTitle').innerText = `Итоги за ${displayDate}`;
 
-            // Настраиваем выпадающий список пользователей
+            // Обновляем список юзеров и полей ввода (если еще не сделано)
             document.getElementById('userSelect').innerHTML = data.users.map(u => `<option value="${u}">${u}</option>`).join('');
-
-            // Настраиваем поля ввода
-            document.getElementById('modalTasksInputs').innerHTML = data.tasks.map((task, idx) => `
+            document.getElementById('modalTasksInputs').innerHTML = data.tasks.map(task => `
                 <div class="form-group">
                     <label><strong>${task}</strong></label>
                     <div class="time-box">
@@ -133,34 +135,27 @@ async function loadData(targetDate = "") {
                 </div>
             `).join('');
 
-            // ШАПКА ТАБЛИЦЫ
-            const thead = document.getElementById('tableHead');
+            // Рисуем шапку
             let headHtml = `<tr><th>Имя</th>`;
             data.tasks.forEach(t => { headHtml += `<th>${t}</th>`; });
-            headHtml += `<th>Итого баллов</th></tr>`;
-            thead.innerHTML = headHtml;
+            headHtml += `<th>Итого</th></tr>`;
+            document.getElementById('tableHead').innerHTML = headHtml;
 
-            // ТЕЛО ТАБЛИЦЫ
+            // Рисуем тело
             const tbody = document.getElementById('tableBody');
-            
-            // Проверка: есть ли данные в таблице
-            if (!data.table || data.table.length === 0 || data.table.every(row => row["Итого"] === 0)) {
-                tbody.innerHTML = `<tr><td colspan="${data.tasks.length + 2}" style="text-align:center; padding:30px; color:#64748b;">Данных за ${displayDate} пока нет</td></tr>`;
-                return;
+            if (!data.table || data.table.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:30px;">Нет данных</td></tr>`;
+            } else {
+                tbody.innerHTML = data.table.map(row => {
+                    let rowHtml = `<tr><td>${row["Имя"]}</td>`;
+                    data.tasks.forEach(t => { rowHtml += `<td>${row[t]}</td>`; });
+                    rowHtml += `<td class="td-total">${row["Итого"]}</td></tr>`;
+                    return rowHtml;
+                }).join('');
             }
-
-            tbody.innerHTML = data.table.map(row => {
-                let rowHtml = `<tr><td>${row["Имя"]}</td>`;
-                data.tasks.forEach(t => {
-                    rowHtml += `<td>${row[t] || "0:00 (0)"}</td>`;
-                });
-                rowHtml += `<td class="td-total">${row["Итого"]}</td></tr>`;
-                return rowHtml;
-            }).join('');
-
         } catch (e) {
-            console.error(e);
-            document.getElementById('tableBody').innerHTML = `<tr><td colspan="10" style="color:red; text-align:center; padding:20px;">Ошибка получения данных. Проверьте WEB_APP_URL.</td></tr>`;
+            console.error("Ошибка:", e);
+            document.getElementById('tableBody').innerHTML = `<tr><td colspan="10" style="text-align:center; color:red;">Ошибка связи с Google Таблицей</td></tr>`;
         }
     }
 
