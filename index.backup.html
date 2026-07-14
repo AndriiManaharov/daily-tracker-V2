@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Турнирный Трекер Задач</title>
+    <style>
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 20px; background-color: #f5f7fb; color: #333; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 25px; border-radius: 16px; box-shadow: 0 4px 20px rgba(164,175,186,0.2); }
+        .header-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; }
+        h2 { margin: 0; color: #1e293b; }
+        
+        /* Управление датами */
+        .date-picker-box { display: flex; align-items: center; gap: 10px; font-weight: bold; }
+        input[type="date"] { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+        
+        /* Таблица */
+        .table-wrapper { overflow-x: auto; margin-top: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
+        table { width: 100%; border-collapse: collapse; text-align: left; background: white; }
+        th, td { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; }
+        th { background-color: #f8fafc; color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 12px; }
+        tr:hover td { background-color: #f8fafc; }
+        tr:first-child td { background-color: #fef08a; font-weight: bold; } /* Золото лидеру */
+        .td-total { font-weight: bold; color: #0f172a; }
+
+        /* Кнопки */
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        
+        /* ПОПАП ОКНО (МОДАЛКА) */
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.6); backdrop-filter: blur(4px); }
+        .modal-content { background: white; margin: 5% auto; padding: 24px; border-radius: 16px; width: 90%; max-width: 450px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); position: relative; animation: slideUp 0.25s ease-out; }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .close-btn { position: absolute; right: 20px; top: 15px; font-size: 24px; cursor: pointer; color: #94a3b8; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 500; font-size: 14px; color: #334155; }
+        select, .time-inputs input { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; font-size: 15px; }
+        
+        /* Поля минут и секунд в строку */
+        .time-box { display: flex; gap: 10px; align-items: center; }
+        .time-box input { text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-actions">
+        <div>
+            <h2 id="tableTitle">🏆 Итоги за сегодня</h2>
+        </div>
+        <div class="date-picker-box">
+            <label for="archiveDate">День:</label>
+            <input type="date" id="archiveDate" onchange="changeDate()">
+            <button class="btn btn-primary" onclick="openModal()">⏱ Внести результаты</button>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table id="mainTable">
+            <thead id="tableHead">
+                <!-- Генерируется динамически -->
+            </thead>
+            <tbody id="tableBody">
+                <tr><td style="text-align:center; padding:30px;">Загрузка данных турнира...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ПОПАП ДЛЯ ВВОДА ВРЕМЕНИ -->
+<div id="inputModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn" onclick="closeModal()">&times;</span>
+        <h3 style="margin-top:0; color:#1e293b;">⏱ Ввод результатов</h3>
+        <form id="resultsForm">
+            <div class="form-group">
+                <label>Кто выполнил?</label>
+                <select id="userSelect" required></select>
+            </div>
+            
+            <div id="modalTasksInputs">
+                <!-- Поля ввода времени сгенерируются сами -->
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width:100%; margin-top:10px; padding:12px;">Сохранить результаты</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    // === ВСТАВЬ СЮДА СВОЮ НОВУЮ ССЫЛКУ ИЗ GOOGLE APPS SCRIPT ===
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwUNQybCGBEF0uXivC46Se1yv5pegbWWJA-khZgStPeubF-9l9wNBSuPt3ECLAGJmecOg/exec";
+
+    let globalTasks = [];
+
+    // Устанавливаем в календаре сегодняшнюю дату по умолчанию (в формате yyyy-MM-dd)
+    const d = new Date();
+    const localToday = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    
+    document.getElementById('archiveDate').value = localToday;
+
+async function loadData(targetDate = "") {
+        try {
+            const dateInput = document.getElementById('archiveDate');
+            
+            // Если дата не выбрана вручную, берем текущую дату в формате YYYY-MM-DD
+            if (!targetDate) {
+                const now = new Date();
+                targetDate = now.getFullYear() + '-' + 
+                             String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                             String(now.getDate()).padStart(2, '0');
+                dateInput.value = targetDate;
+            }
+
+            const response = await fetch(`${WEB_APP_URL}?date=${targetDate}`);
+            const data = await response.json();
+            
+            globalTasks = data.tasks;
+
+            // Заголовок (красивый формат ДД.ММ.ГГГГ)
+            const displayDate = data.date.split('-').reverse().join('.');
+            document.getElementById('tableTitle').innerText = `Итоги за ${displayDate}`;
+
+            // Обновляем список юзеров и полей ввода (если еще не сделано)
+            document.getElementById('userSelect').innerHTML = data.users.map(u => `<option value="${u}">${u}</option>`).join('');
+            document.getElementById('modalTasksInputs').innerHTML = data.tasks.map(task => `
+                <div class="form-group">
+                    <label><strong>${task}</strong></label>
+                    <div class="time-box">
+                        <input type="number" placeholder="Мин" class="m-input" data-task="${task}" min="0" required>
+                        <span>:</span>
+                        <input type="number" placeholder="Сек" class="s-input" data-task="${task}" min="0" max="59" required>
+                    </div>
+                </div>
+            `).join('');
+
+            // Рисуем шапку
+            let headHtml = `<tr><th>Имя</th>`;
+            data.tasks.forEach(t => { headHtml += `<th>${t}</th>`; });
+            headHtml += `<th>Итого</th></tr>`;
+            document.getElementById('tableHead').innerHTML = headHtml;
+
+            // Рисуем тело
+            const tbody = document.getElementById('tableBody');
+            if (!data.table || data.table.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:30px;">Нет данных</td></tr>`;
+            } else {
+                tbody.innerHTML = data.table.map(row => {
+                    let rowHtml = `<tr><td>${row["Имя"]}</td>`;
+                    data.tasks.forEach(t => { rowHtml += `<td>${row[t]}</td>`; });
+                    rowHtml += `<td class="td-total">${row["Итого"]}</td></tr>`;
+                    return rowHtml;
+                }).join('');
+            }
+        } catch (e) {
+            console.error("Ошибка:", e);
+            document.getElementById('tableBody').innerHTML = `<tr><td colspan="10" style="text-align:center; color:red;">Ошибка связи с Google Таблицей</td></tr>`;
+        }
+    }
+
+    function changeDate() {
+        const selectedDate = document.getElementById('archiveDate').value;
+        loadData(selectedDate);
+    }
+
+    function openModal() { document.getElementById('inputModal').style.display = "block"; }
+    function closeModal() { document.getElementById('inputModal').style.display = "none"; }
+    window.onclick = function(e) { if (e.target == document.getElementById('inputModal')) closeModal(); }
+
+    // Отправка формы из Попапа
+    document.getElementById('resultsForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const payload = {
+            name: document.getElementById('userSelect').value,
+            times: {}
+        };
+
+        // Собираем минуты и секунды, переводя всё в чистые секунды для базы данных
+        globalTasks.forEach(task => {
+            const min = parseInt(document.querySelector(`.m-input[data-task="${task}"]`).value) || 0;
+            const sec = parseInt(document.querySelector(`.s-input[data-task="${task}"]`).value) || 0;
+            payload.times[task] = (min * 60) + sec; // Сохраняем общую сумму секунд
+        });
+
+        const btn = document.querySelector('#resultsForm button');
+        btn.innerText = "Сохранение...";
+        btn.disabled = true;
+
+        try {
+            await fetch(WEB_APP_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            alert('Данные успешно сохранены!');
+            closeModal();
+            document.getElementById('resultsForm').reset();
+            // Перезагружаем таблицу для выбранной даты
+            changeDate();
+        } catch (err) {
+            alert('Ошибка при отправке данных');
+        } finally {
+            btn.innerText = "Сохранить результаты";
+            btn.disabled = false;
+        }
+    });
+
+    // Первая загрузка
+    loadData();
+</script>
+</body>
+</html>
